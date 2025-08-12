@@ -851,6 +851,28 @@ function buildMetafieldsRow(item, mappingList) {
   // should not appear in the exported file.
   if (row.hasOwnProperty('Variant ID')) delete row['Variant ID'];
   if (row.hasOwnProperty('ITP')) delete row['ITP'];
+
+  // Add price without VAT column.  Extract the 'price/withoutVAT/amount'
+  // from the nested price object if available, or use the dot-notated
+  // property from the dataset.  This column preserves the original
+  // amount before VAT and provides visibility into the net price.
+  let priceNoVat = '';
+  if (item) {
+    // Check nested object structure first
+    if (
+      typeof item.price === 'object' &&
+      item.price !== null &&
+      item.price.withoutVAT &&
+      typeof item.price.withoutVAT === 'object'
+    ) {
+      priceNoVat = item.price.withoutVAT.amount || '';
+    }
+    // Fallback to dot-notated property
+    if (!priceNoVat && Object.prototype.hasOwnProperty.call(item, 'price/withoutVAT/amount')) {
+      priceNoVat = item['price/withoutVAT/amount'];
+    }
+  }
+  row['price/withoutVAT/amount'] = priceNoVat || '';
   return row;
 }
 
