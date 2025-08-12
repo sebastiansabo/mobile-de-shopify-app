@@ -558,21 +558,51 @@ function buildMetafieldsRow(item, mappingList) {
   }
   // Tags: join unique tags
   row['Tags'] = Array.from(tagsSet).filter(Boolean).join(', ');
-  // Body HTML: include description if present.
-  row['Body HTML'] = (item && item.description) ? String(item.description) : '';
-  // Features: build an HTML list from item.features if available.
+  // Body HTML: build a unified HTML description combining attributes and features.
+  // First, gather attribute entries from item.attributes.  Attributes may be
+  // provided as an object or a JSON string; values may be arrays or strings.
+  let attrEntries = [];
+  if (item && item.attributes) {
+    let attrObj = null;
+    if (typeof item.attributes === 'object' && !Array.isArray(item.attributes)) {
+      attrObj = item.attributes;
+    } else if (typeof item.attributes === 'string') {
+      try {
+        const parsedAttr = JSON.parse(item.attributes);
+        if (parsedAttr && typeof parsedAttr === 'object' && !Array.isArray(parsedAttr)) {
+          attrObj = parsedAttr;
+        }
+      } catch (e) {
+        // ignore parse errors
+      }
+    }
+    if (attrObj) {
+      for (const [key, val] of Object.entries(attrObj)) {
+        // Use full value; if array, join with comma
+        let text = '';
+        if (Array.isArray(val)) {
+          text = val.map((v) => String(v)).join(', ');
+        } else {
+          text = String(val);
+        }
+        attrEntries.push(`<li><strong>${key}:</strong> ${text}</li>`);
+      }
+    }
+  }
+  // Next, gather feature entries from item.features.  Features may be an
+  // array of strings or objects.  Convert each to a list item.
+  let featEntries = [];
   if (item && item.features) {
     const feats = safeParseMaybeList(item.features).map((f) => {
       if (f && typeof f === 'object') return f.name || f.title || '';
       return String(f);
     }).filter(Boolean);
-    row['Features'] =
-      feats.length > 0
-        ? '<ul><li>' + feats.join('</li><li>') + '</li></ul>'
-        : '';
-  } else {
-    row['Features'] = '';
+    featEntries = feats.map((f) => `<li>${f}</li>`);
   }
+  const combinedEntries = [...attrEntries, ...featEntries];
+  row['Body HTML'] = combinedEntries.length > 0 ? `<ul>${combinedEntries.join('')}</ul>` : '';
+  // Build a separate Features column as before for backward compatibility.
+  row['Features'] = featEntries.length > 0 ? `<ul>${featEntries.join('')}</ul>` : '';
   // Expand raw attributes into separate columns.  Each attribute name will
   // become a column containing the attribute's value.  This preserves
   // attribute data in a human-readable form alongside metafields.  The
