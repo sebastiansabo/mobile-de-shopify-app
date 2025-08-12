@@ -1,3 +1,19 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.pnpm-store/
+.parcel-cache/
+dist/
+.next/
+coverage/
+
+# OS / Editor
+.DS_Store
+.idea/
+.vscode/
+
+# Env / Local
 .env
 .env.*
 *.env
