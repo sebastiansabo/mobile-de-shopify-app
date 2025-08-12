@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mobile.de Data Crawler</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 700px;
+        margin: 40px auto;
+        padding: 0 20px;
+      }
+      h1 {
+        font-size: 24px;
+        margin-bottom: 20px;
+      }
+      label {
+        font-weight: bold;
+        display: block;
+        margin-top: 12px;
+      }
+      input[type="text"], input[type="number"] {
+        width: 100%;
+        padding: 8px;
+        box-sizing: border-box;
+        margin-top: 4px;
+      }
+      button {
+        margin-top: 16px;
+        padding: 10px 20px;
+        font-size: 16px;
+      }
+      #progress {
+        margin-top: 20px;
+        font-weight: bold;
+      }
+      #links a {
+        display: inline-block;
+        margin-right: 12px;
+        margin-top: 8px;
+      }
+      #bar {
+        height: 6px;
+        background: #e5e7eb;
+        border-radius: 3px;
+        overflow: hidden;
+        margin-top: 8px;
+      }
+      #bar > div {
+        height: 100%;
+        width: 0;
+        background: #3b82f6;
+        transition: width 0.3s ease;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Mobile.de Data Crawler</h1>
+    <form id="crawlForm">
+      <label for="searchUrl">Search URL</label>
+      <input type="text" id="searchUrl" name="searchUrl" placeholder="https://suchen.mobile.de/fahrzeuge/search.html?..." required />
+      <label for="maxItems">Maximum items (optional)</label>
+      <input type="number" id="maxItems" name="maxItems" min="1" placeholder="e.g. 50" />
+      <button type="submit">Start crawl</button>
+    </form>
+    <div id="progress"></div>
+    <div id="bar"><div></div></div>
+    <div id="links"></div>
+    <script>
+      // Utility to update the progress bar. Accepts a percentage 0–100.
+      function updateBar(pct) {
+        document.querySelector('#bar > div').style.width = pct + '%';
+      }
+      document.getElementById('crawlForm').addEventListener('submit', async function (e) {
+        e.preventDefault();
+        const searchUrl = document.getElementById('searchUrl').value.trim();
+        const maxItems = document.getElementById('maxItems').value;
+        document.getElementById('progress').textContent = '';
+        document.getElementById('links').innerHTML = '';
+        updateBar(0);
+        if (!searchUrl) {
+          alert('Please provide a search URL');
+          return;
+        }
+        try {
+          const resp = await fetch('/api/start-run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ searchUrl, maxItems })
+          });
+          const json = await resp.json();
+          if (json.error) {
+            alert(json.error);
+            return;
+          }
+          const runId = json.runId;
+          document.getElementById('progress').textContent = 'Run started. ID: ' + runId;
+          // Poll for run status every 3 seconds.
+          const interval = setInterval(async () => {
+            try {
+              const res = await fetch('/api/run-status?runId=' + encodeURIComponent(runId));
+              const status = await res.json();
+              const succeeded = (status.stats && (status.stats.itemsOutput || status.stats.succeeded)) || 0;
+              const total = (status.stats && (status.stats.itemsTotal || status.stats.requestsTotal)) || 0;
+              // Calculate percentage; if total is zero, remain at 0% until we have a count.
+              let pct = 0;
+              if (total > 0) {
+                pct = Math.floor((succeeded / total) * 100);
+              }
+              // Update the progress bar.
+              updateBar(pct);
+              // Display status with counts and percentage.
+              document.getElementById('progress').textContent =
+                'Status: ' + status.status + ' | ' + succeeded + '/' + total + ' (' + pct + '%)';
+              if (status.status === 'SUCCEEDED') {
+                clearInterval(interval);
+                updateBar(100);
+                document.getElementById('progress').textContent = 'Run succeeded. ' + succeeded + ' items.';
+                // Provide download links for raw and Shopify formats.
+                document.getElementById('links').innerHTML =
+                  '<p><strong>Downloads:</strong></p>' +
+                  '<a href="/api/run-results?runId=' + runId + '&format=json" target="_blank">Raw JSON</a>' +
+                  '<a href="/api/run-results?runId=' + runId + '&format=csv" target="_blank">Raw CSV</a>' +
+                  '<a href="/api/run-results?runId=' + runId + '&format=xlsx" target="_blank">Raw Excel</a>' +
+                  '<a href="/api/shopify-results?runId=' + runId + '&format=csv" target="_blank">Shopify CSV</a>' +
+                  '<a href="/api/shopify-results?runId=' + runId + '&format=xlsx" target="_blank">Shopify Excel</a>' +
+                  '<a href="/api/images-exploded?runId=' + runId + '&format=json" target="_blank">Images JSON</a>' +
+                  '<a href="/api/images-exploded?runId=' + runId + '&format=csv" target="_blank">Images CSV</a>' +
+                  '<a href="/api/images-exploded?runId=' + runId + '&format=xlsx" target="_blank">Images Excel</a>';
+              } else if (status.status === 'FAILED' || status.status === 'ABORTED') {
+                clearInterval(interval);
+                document.getElementById('progress').textContent = 'Run ended with status: ' + status.status;
+              }
+            } catch (err) {
+              clearInterval(interval);
+              document.getElementById('progress').textContent = 'Error while polling run status';
+            }
+          }, 3000);
+        } catch (err) {
+          alert('Failed to start run: ' + err.message);
+        }
+      });
+    </script>
+  </body>
+</html>
