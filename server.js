@@ -18,6 +18,166 @@ import ExcelJS from 'exceljs';
 import fs from 'fs';
 import path from 'path';
 
+// Translation dictionaries for attribute names and feature strings into Romanian.
+// Only a subset of common keys are included; any missing keys or features
+// will default to their original English names.
+const ATTR_TRANSLATIONS = {
+  'Vehicle condition': 'Stare vehicul',
+  'Category': 'Categorie',
+  'Model range': 'Gamă model',
+  'Trim line': 'Nivel echipare',
+  'Vehicle Number': 'Număr vehicul',
+  'Availability': 'Disponibilitate',
+  'Origin': 'Origine',
+  'Mileage': 'Kilometraj',
+  'Cubic Capacity': 'Capacitate cilindrică',
+  'Power': 'Putere',
+  'Drive type': 'Tip tracțiune',
+  'Fuel': 'Combustibil',
+  'Number of Seats': 'Număr de locuri',
+  'Door Count': 'Număr uși',
+  'Sliding door': 'Ușă culisantă',
+  'Transmission': 'Transmisie',
+  'Emission Class': 'Clasă de emisii',
+  'Emissions Sticker': 'Etichetă emisii',
+  'First Registration': 'Prima înmatriculare',
+  'Number of Vehicle Owners': 'Număr de proprietari',
+  'HU': 'ITP',
+  'Climatisation': 'Climatizare',
+  'Parking sensors': 'Senzori parcare',
+  'Airbags': 'Airbaguri',
+  'Colour (Manufacturer)': 'Culoare (producător)',
+  'Colour': 'Culoare',
+  'Interior Design': 'Design interior',
+  'Energy consumption (comb.)': 'Consum de energie (comb.)',
+  'CO₂ emissions (comb.)': 'Emisii CO₂ (comb.)',
+  'Trailer load braked': 'Sarcină remorcă frânată',
+  'Trailer load unbraked': 'Sarcină remorcă nefrânată',
+  'Weight': 'Greutate',
+  'Last service (mileage)': 'Ultimul service (kilometraj)',
+  'Cylinders': 'Cilindri',
+  'Tank capacity': 'Capacitate rezervor'
+};
+
+const FEATURE_TRANSLATIONS = {
+  'ABS': 'ABS',
+  'Adaptive Cruise Control': 'Control adaptiv al vitezei',
+  'Adaptive lighting': 'Iluminare adaptivă',
+  'Alarm system': 'Sistem de alarmă',
+  'Alloy wheels': 'Jante din aliaj',
+  'Arm rest': 'Cotieră',
+  'Bi-xenon headlights': 'Faruri bi-xenon',
+  'Bluetooth': 'Bluetooth',
+  'Cargo barrier': 'Barieră pentru bagaje',
+  'CD player': 'CD player',
+  'Central locking': 'Închidere centralizată',
+  'Cruise control': 'Pilot automat',
+  'Distance warning system': 'Sistem avertizare distanță',
+  'Electric seat adjustment': 'Reglaj electric scaune',
+  'Electric windows': 'Geamuri electrice',
+  'Emergency brake assist': 'Asistență frânare de urgență',
+  'ESP': 'ESP',
+  'Front wheel drive': 'Tracțiune față',
+  'Hands-free kit': 'Set mâini libere',
+  'Headlight washer system': 'Sistem spălare faruri',
+  'Heated seats': 'Scaune încălzite',
+  'Hill-start assist': 'Asistență la pornirea în rampă',
+  'Immobilizer': 'Imobilizator',
+  'Isofix': 'Isofix',
+  'Leather steering wheel': 'Volan îmbrăcat în piele',
+  'LED running lights': 'Lumini de zi LED',
+  'Light sensor': 'Senzor lumină',
+  'Lumbar support': 'Suport lombar',
+  'Massage seats': 'Scaune masaj',
+  'Multifunction steering wheel': 'Volan multifuncțional',
+  'Navigation system': 'Sistem de navigație',
+  'On-board computer': 'Computer de bord',
+  'Panoramic roof': 'Plafon panoramic',
+  'Passenger seat Isofix point': 'Punct Isofix pentru scaun pasager',
+  'Power Steering': 'Servodirecție',
+  'Rain sensor': 'Senzor de ploaie',
+  'Roof rack': 'Portbagaj pe acoperiș',
+  'Ski bag': 'Sac pentru schiuri',
+  'Sound system': 'Sistem audio',
+  'Speed limit control system': 'Sistem control limită viteză',
+  'Sunroof': 'Trapă',
+  'Tinted windows': 'Geamuri fumurii',
+  'Touchscreen': 'Ecran tactil',
+  'Traction control': 'Control tracțiune',
+  'Traffic sign recognition': 'Recunoaștere indicatoare',
+  'Tuner/radio': 'Radio',
+  'Tyre pressure monitoring': 'Monitorizare presiune anvelope',
+  'USB port': 'Port USB',
+  'Winter package': 'Pachet de iarnă'
+};
+
+// Translation dictionary for common attribute values into Romanian.  Only
+// selected values are translated; any values not present will be left
+// unchanged.  When values contain multiple parts separated by commas,
+// only exact matches will be translated.
+const VALUE_TRANSLATIONS = {
+  'Used vehicle': 'Vehicul folosit',
+  'Accident-free': 'Fără accident',
+  'Saloon': 'Sedan',
+  'Cabriolet / Roadster': 'Cabriolet / Roadster',
+  'Estate car': 'Break',
+  'Van / Minibus': 'Van / Microbuz',
+  'Now': 'Acum',
+  'German edition': 'Ediție germană',
+  'Internal combustion engine': 'Motor cu combustie internă',
+  'Petrol': 'Benzină',
+  'Diesel': 'Motorină',
+  'Petrol, E10-enabled': 'Benzină, compatibil E10',
+  'Automatic': 'Automată',
+  'Manual gearbox': 'Cutie manuală',
+  'Manual': 'Manuală',
+  'Automatic climatisation, 2 zones': 'Climatizare automată, 2 zone',
+  'Automatic climatisation, 3 zones': 'Climatizare automată, 3 zone',
+  'Automatic air conditioning': 'Aer condiționat automat',
+  'Rear, Front': 'Spate, Față',
+  'Rear, Camera, Front': 'Spate, Cameră, Față',
+  'Driver Airbag': 'Airbag șofer',
+  'Front and Side Airbags': 'Airbaguri frontale și laterale',
+  'Front and Side and More Airbags': 'Airbaguri frontale, laterale și altele',
+  'Pure White': 'Alb Pur',
+  'Black Metallic': 'Negru Metalic',
+  'Brown Metallic': 'Maro Metalic',
+  'Blue': 'Albastru',
+  'Red': 'Roșu',
+  'Cloth, Black': 'Textil, Negru',
+  'Cloth, Brown': 'Textil, Maro',
+  'Full leather, Beige': 'Piele integrală, Bej',
+  'Full leather, Brown': 'Piele integrală, Maro',
+  'Full leather, Other': 'Piele integrală, Alte',
+  'Euro5': 'Euro5',
+  'Euro6': 'Euro6',
+  '4 (Green)': '4 (Verde)',
+  'New': 'Nou',
+  'Used': 'Folosit'
+  ,
+  // Transmission and fuel values
+  'Manual': 'Manuală',
+  'Manual gearbox': 'Manuală',
+  'Automatic': 'Automată',
+  'Automatic gearbox': 'Automată',
+  // Fuel types
+  'Petrol': 'Benzină',
+  'Diesel': 'Diesel',
+  // Colours
+  'Brown': 'Maro',
+  'White': 'Alb',
+  'Black': 'Negru'
+  ,
+  // Additional value translations for common fields
+  // Some attribute values such as drive type and parking sensor positions
+  // appear as single words.  Provide Romanian equivalents where
+  // possible.  Values not listed here will fall back to the original.
+  'Internal': 'Intern',
+  'Front': 'Față',
+  'Rear': 'Spate',
+  'Camera': 'Cameră'
+};
+
 
 // Load environment variables from .env if present.
 dotenv.config();
@@ -244,8 +404,10 @@ function expandAttributesToColumns(item) {
   // → '1,395'), otherwise the first word or first part before a comma
   // is used (e.g. 'Used vehicle' → 'Used').
   attrs.forEach((attr) => {
-    const name = attr.name ? String(attr.name).trim() : '';
-    if (!name) return;
+    const rawName = attr.name ? String(attr.name).trim() : '';
+    if (!rawName) return;
+    // Translate attribute name to Romanian if available for column headers.
+    const name = ATTR_TRANSLATIONS[rawName] || rawName;
     let val = attr.value;
     // If the value is an array, use its first element.
     if (Array.isArray(val) && val.length > 0) {
@@ -283,9 +445,20 @@ function expandAttributesToColumns(item) {
         shortVal = parts.length > 0 ? parts[0] : strVal;
       }
     }
-    // Assign the short value to the column if not already set.
+    // Translate the short value into Romanian if a translation exists.
+    // Certain attributes such as colour should retain their original
+    // values.  When the attribute name corresponds to Colour or
+    // Colour (Manufacturer) we skip translating the value.
+    let translatedVal = shortVal;
+    const rawKey = rawName;
+    const skipValueTranslation =
+      rawKey === 'Colour' || rawKey === 'Colour (Manufacturer)';
+    if (!skipValueTranslation && VALUE_TRANSLATIONS.hasOwnProperty(shortVal)) {
+      translatedVal = VALUE_TRANSLATIONS[shortVal];
+    }
+    // Assign the translated (or original) short value to the column if not already set.
     if (!Object.prototype.hasOwnProperty.call(cols, name)) {
-      cols[name] = shortVal;
+      cols[name] = translatedVal;
     }
   });
   return cols;
@@ -578,14 +751,50 @@ function buildMetafieldsRow(item, mappingList) {
     }
     if (attrObj) {
       for (const [key, val] of Object.entries(attrObj)) {
-        // Use full value; if array, join with comma
+        // Use full value; if array, join with comma.  Translate values
+        // into Romanian if a translation exists.  If the value is an
+        // array, translate each element individually.
         let text = '';
+        // Determine if this attribute's value should be translated.  Colour
+        // attributes should retain their original values.
+        const skipTranslationForValue =
+          key === 'Colour' || key === 'Colour (Manufacturer)';
         if (Array.isArray(val)) {
-          text = val.map((v) => String(v)).join(', ');
+          text = val
+            .map((v) => {
+              const sv = v === undefined || v === null ? '' : String(v).trim();
+              if (!skipTranslationForValue) {
+                const tr = VALUE_TRANSLATIONS[sv];
+                if (tr) return tr;
+              }
+              return sv;
+            })
+            .join(', ');
         } else {
-          text = String(val);
+          const sv = val === undefined || val === null ? '' : String(val).trim();
+          // Only translate if not excluded and an exact translation exists
+          const tr = !skipTranslationForValue ? VALUE_TRANSLATIONS[sv] : undefined;
+          if (tr) {
+            text = tr;
+          } else {
+            // If the value contains commas, attempt to translate each part separately.
+            if (!skipTranslationForValue && sv.includes(',')) {
+              text = sv
+                .split(',')
+                .map((p) => {
+                  const part = p.trim();
+                  const trPart = VALUE_TRANSLATIONS[part];
+                  return trPart || part;
+                })
+                .join(', ');
+            } else {
+              text = sv;
+            }
+          }
         }
-        attrEntries.push(`<li><strong>${key}:</strong> ${text}</li>`);
+        // Translate attribute name to Romanian if available.
+        const roKey = ATTR_TRANSLATIONS[key] || key;
+        attrEntries.push(`<li><strong>${roKey}:</strong> ${text}</li>`);
       }
     }
   }
@@ -597,7 +806,10 @@ function buildMetafieldsRow(item, mappingList) {
       if (f && typeof f === 'object') return f.name || f.title || '';
       return String(f);
     }).filter(Boolean);
-    featEntries = feats.map((f) => `<li>${f}</li>`);
+    featEntries = feats.map((f) => {
+      const roFeat = FEATURE_TRANSLATIONS[f] || f;
+      return `<li>${roFeat}</li>`;
+    });
   }
   const combinedEntries = [...attrEntries, ...featEntries];
   row['Body HTML'] = combinedEntries.length > 0 ? `<ul>${combinedEntries.join('')}</ul>` : '';
@@ -615,6 +827,30 @@ function buildMetafieldsRow(item, mappingList) {
       row[key] = attributeColumns[key];
     }
   });
+  // Additional columns: extract dealer name and car URL.  dealerDetails
+  // may be an object or a JSON string with a 'name' property.  The URL
+  // is taken directly from the dataset.
+  let dealerName = '';
+  if (item && item.dealerDetails) {
+    if (typeof item.dealerDetails === 'object' && item.dealerDetails !== null) {
+      dealerName = item.dealerDetails.name || '';
+    } else if (typeof item.dealerDetails === 'string') {
+      try {
+        const parsedDealer = JSON.parse(item.dealerDetails);
+        if (parsedDealer && typeof parsedDealer === 'object') {
+          dealerName = parsedDealer.name || '';
+        }
+      } catch (e) {
+        // ignore parse errors
+      }
+    }
+  }
+  row['dealerDetails'] = dealerName;
+  row['Car Url'] = item && item.url ? String(item.url) : '';
+  // Remove unwanted columns from the final row.  'Variant ID' and 'ITP'
+  // should not appear in the exported file.
+  if (row.hasOwnProperty('Variant ID')) delete row['Variant ID'];
+  if (row.hasOwnProperty('ITP')) delete row['ITP'];
   return row;
 }
 
