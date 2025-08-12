@@ -1,0 +1,16 @@
+{
+  "name": "mobile-de-shopify-app",
+  "version": "1.0.0",
+  "description": "A simple Shopify embedded application that integrates with an Apify agent to crawl mobile.de listings.",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "dotenv": "^16.4.5",
+    "node-fetch": "^3.3.2",
+    "exceljs": "^4.3.0"
+  }
+}
