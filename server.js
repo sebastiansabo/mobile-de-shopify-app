@@ -1373,21 +1373,53 @@ app.post('/api/start-run', async (req, res) => {
     if (!actorId) {
       return res.status(500).json({ error: 'APIFY_ACTOR_ID must be set' });
     }
-    // Build actor input. The mobile.de scraper expects an object with start_urls
-    // containing the search URL and an optional max_items property.
-    const input = {
-      start_urls: [{ url: searchUrl }]
-    };
+    // Build actor input using the new Mobile.de scraper schema.
+    // The actor expects searchPageURLs at the top level of the input,
+    // along with additional parameters for pagination, reviews and
+    // category.  We map the user-provided search URL into the
+    // searchPageURLs array and set sensible defaults for other
+    // properties.  maxItems controls the maximum number of results
+    // to retrieve.
     const max = parseInt(maxItems);
-    if (!Number.isNaN(max) && max > 0) input.max_items = max;
+    const input = {
+      searchPageURLs: [searchUrl],
+      // Increase the default page limit to ensure all results from the
+      // provided search URL are captured.  The user can adjust this via
+      // environment variables if needed.
+      searchPageURLMaxItems: 5000,
+      // Disable reviews extraction by default (0 = no reviews).
+      reviewLimit: 0,
+      // Enable automatic paging through search results.
+      automaticPaging: true,
+      // Default category to Car to match typical mobile.de searches.
+      searchCategory: 'Car',
+      // Empty arrays indicate no additional search terms or model filters.
+      searchTerms: [],
+      models: [],
+      // Use the default sort order; can be changed via other inputs
+      sort: 'Standard'
+    };
+    if (!Number.isNaN(max) && max > 0) input.maxItems = max;
     // Start the actor run asynchronously.
+    //
+    // NOTE: Pass the input object directly as the request body rather than
+    // wrapping it under an "input" property. According to Apify's API
+    // documentation, the POST payload itself is treated as the Actor's
+    // input【673632852931336†L0-L0】. This ensures that only the keys defined in
+    // our input object are sent to the Actor and avoids injecting
+    // deprecated `start_urls` or other default keys into the run
+    // configuration. This also aligns with the working example provided by
+    // the user, where the JSON payload defines `searchPageURLs`,
+    // `searchPageURLMaxItems`, `reviewLimit`, `automaticPaging`,
+    // `searchCategory`, `searchTerms`, `models`, `sort` and `maxItems`
+    // directly at the top level.
     const runResp = await fetch(`https://api.apify.com/v2/acts/${actorId}/runs`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify({ input })
+      body: JSON.stringify(input)
     });
     const runData = await runResp.json();
     if (!runResp.ok) {
