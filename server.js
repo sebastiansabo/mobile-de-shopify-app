@@ -873,6 +873,66 @@ function buildMetafieldsRow(item, mappingList) {
     }
   }
   row['price/withoutVAT/amount'] = priceNoVat || '';
+
+  // Derive drive train metafield (custom.transmisie).  The dataset
+  // stores drive type information primarily in the features list.  We
+  // scan the features array for specific phrases indicating the drive
+  // configuration and map them to their Romanian shorthand codes:
+  //   - "Rear wheel drive"  → "4x2 (RWD)"
+  //   - "Front wheel drive" → "2x4 (FWD)"
+  //   - "Four-wheel drive"  → "4x4 (AWD)"
+  // If multiple drive types are present, the first match wins.  If
+  // none match, the column will be left empty.  The result is
+  // assigned to the metafield column name specified by the user.
+  let driveCode = '';
+  if (item) {
+    // Collect features from both the unified features array and any
+    // enumerated feature keys (features/0, features/1, etc.).
+    let allFeatures = [];
+    // 1) Parse the top-level `features` field if present.
+    if (item.features) {
+      try {
+        const fs = safeParseMaybeList(item.features);
+        fs.forEach((f) => {
+          if (f && typeof f === 'object' && (f.name || f.title)) {
+            allFeatures.push(String(f.name || f.title));
+          } else if (f) {
+            allFeatures.push(String(f));
+          }
+        });
+      } catch (e) {
+        // ignore parse errors
+      }
+    }
+    // 2) Parse enumerated feature fields (features/0..features/99)
+    for (let i = 0; i < 100; i++) {
+      const key = `features/${i}`;
+      if (Object.prototype.hasOwnProperty.call(item, key)) {
+        const val = item[key];
+        if (val) {
+          allFeatures.push(String(val));
+        }
+      }
+    }
+    // Normalize feature strings and search for drive patterns.
+    for (const feat of allFeatures) {
+      const txt = feat.trim().toLowerCase();
+      if (txt === 'rear wheel drive') {
+        driveCode = '4x2 (RWD)';
+        break;
+      }
+      if (txt === 'front wheel drive') {
+        driveCode = '2x4 (FWD)';
+        break;
+      }
+      if (txt === 'four-wheel drive' || txt === 'four wheel drive') {
+        driveCode = '4x4 (AWD)';
+        break;
+      }
+    }
+  }
+  // Add the drive code to the custom transmisie metafield if found.
+  row['Metafield: custom.transmisie [list.single_line_text_field]'] = driveCode;
   return row;
 }
 
