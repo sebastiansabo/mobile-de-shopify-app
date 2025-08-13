@@ -766,19 +766,74 @@ function buildMetafieldsRow(item, mappingList) {
   const idVal = item && item.id !== undefined ? String(item.id) : '';
   row['Variant SKU'] = idVal;
   row['Variant ID'] = idVal;
-  // Variant Price: if not filled by mapping, derive from price object/fields.
-  if (!row['Variant Price']) {
-    let priceVal = '';
-    if (item && typeof item.price === 'object' && item.price !== null) {
-      priceVal = item.price.total?.amount ||
-                 item.price.amount ||
-                 item.price.value ||
-                 item['price/total/amount'] ||
-                 '';
-    } else if (item) {
-      priceVal = item['price/total/amount'] || '';
+  // Variant Price: calculate from the price amount according to the business rule.
+  // The variant price should equal price.amount * 1.21 / 1.19.  We
+  // attempt to parse the numeric amount from the price object or
+  // related fields.  Commas are treated as decimal separators and
+  // spaces are removed.  If a valid number cannot be parsed, we
+  // leave the variant price untouched (either existing mapping or
+  // blank).
+  {
+    // Determine the source amount string from the item.  Prefer
+    // item.price.amount, then item.price.total.amount, then
+    // item.price.value, then price/total/amount field.
+    let amountStr = '';
+    if (item && item.price && typeof item.price === 'object' && item.price !== null) {
+      if (item.price.amount) amountStr = String(item.price.amount);
+      else if (item.price.total && item.price.total.amount) amountStr = String(item.price.total.amount);
+      else if (item.price.value) amountStr = String(item.price.value);
     }
-    row['Variant Price'] = priceVal;
+    if (!amountStr && item && item['price/total/amount']) {
+      amountStr = String(item['price/total/amount']);
+    }
+    // Clean the amount: remove currency symbols and spaces.
+    let numVal = NaN;
+    if (amountStr) {
+      // Replace comma with dot for decimal, remove thousands separators (dots or commas) and spaces.
+      // e.g. "15,873.11" -> "15873.11", "15873,11" -> "15873.11".
+      let cleaned = amountStr
+        .replace(/\s+/g, '')
+        .replace(/[€£$]/g, '')
+        .trim();
+      // If the string has both comma and dot, assume comma is thousands sep; remove commas.
+      if (cleaned.includes(',') && cleaned.includes('.')) {
+        cleaned = cleaned.replace(/,/g, '');
+      }
+      // If only comma exists, treat it as decimal separator.
+      if (!cleaned.includes('.') && cleaned.includes(',')) {
+        cleaned = cleaned.replace(/,/g, '.');
+      }
+      // Remove any non-digit/dot characters (e.g. "km", "ccm", etc.) at end
+      cleaned = cleaned.match(/[0-9.]+/)
+        ? cleaned.match(/[0-9.]+/)[0]
+        : cleaned;
+      numVal = parseFloat(cleaned);
+    }
+    if (!isNaN(numVal) && numVal > 0) {
+      // First compute price adjusted for VAT difference
+      let priceWithVatAdj = (numVal * 1.21) / 1.19;
+      // Determine extra commission based on original amount before VAT adjustment.
+      // Commission thresholds are applied on the raw amount (numVal) per the user specification.
+      let commissionRate = 0;
+      const amt = numVal;
+      if (amt < 25000) commissionRate = 0.095; // <25k → 9.50%
+      else if (amt < 40000) commissionRate = 0.075; // 25k–<40k → 7.50%
+      else if (amt < 60000) commissionRate = 0.065; // 40k–<60k → 6.50%
+      else if (amt < 90000) commissionRate = 0.055; // 60k–<90k → 5.50%
+      else if (amt < 250000) commissionRate = 0.045; // 90–<250k → 4.50%
+      else commissionRate = 0.035; // ≥250k → 3.50%
+      // Apply commission
+      priceWithVatAdj = priceWithVatAdj * (1 + commissionRate);
+      // Round to two decimals
+      const rounded = Math.round(priceWithVatAdj * 100) / 100;
+      row['Variant Price'] = rounded.toString();
+    } else {
+      // If no number could be parsed and the row already has a Variant Price from mapping
+      // or previous logic, leave it as-is. Otherwise leave blank.
+      if (!row['Variant Price']) {
+        row['Variant Price'] = '';
+      }
+    }
   }
   // Vendor: if not filled, set to sellerId if available.
   if (!row['Vendor'] && item && item.sellerId !== undefined) {
