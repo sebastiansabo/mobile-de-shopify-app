@@ -178,6 +178,85 @@ const VALUE_TRANSLATIONS = {
   'Camera': 'Cameră'
 };
 
+// Define a mapping from current output field names to new metafield names.  This
+// mapping is used to build the final Shopify export in a two‑step flow
+// (Step 1 raw data, Step 2 normalized/mapped data).  Only keys present
+// here or in the list of always‑kept fields will be included in the
+// output.  Values not found in this mapping will be omitted from the
+// Shopify export.
+const NEW_METAFIELD_MAPPINGS = {
+  // Simple renames
+  'dealerDetails': 'Vendor',
+  'Număr vehicul': 'Variant Barcode',
+  'Greutate': 'Variant Weight',
+  // Dataset Vendor field maps to a custom metafield for dossier number
+  'Vendor': 'Metafield: custom.nr_dos_ [single_line_text_field]',
+  'Prima înmatriculare': 'Metafield: custom.data_livrarii [single_line_text_field]',
+  'Capacitate cilindrică': 'Metafield: custom.cilindree [single_line_text_field]',
+  'Emisii CO₂ (comb.)': 'Metafield: custom.emisii_co2 [single_line_text_field]',
+  'Transmisie': 'Metafield: custom.cutie_viteze [single_line_text_field]',
+  'Clasă de emisii': 'Metafield: custom.clasa_de_emisii_noxe [single_line_text_field]',
+  'Car Url': 'Metafield: custom.nr_imatr_ [single_line_text_field]',
+  'Culoare': 'Metafield: custom.culoare [single_line_text_field]',
+  'Număr uși': 'Metafield: custom.nr_de_usi [single_line_text_field]',
+  'Construction Year': 'Metafield: custom.anul_modelului [single_line_text_field]',
+  'Putere': 'Metafield: custom.putere_cp [single_line_text_field]',
+  'Kilometraj': 'Metafield: custom.kilometraj [single_line_text_field]',
+  'Nivel echipare': 'Metafield: custom.nivel_de_echipare [single_line_text_field]',
+  'Features': 'Metafield: custom.dotari [multi_line_text_field]',
+  'Categorie': 'Metafield: custom.bodu_type [single_line_text_field]',
+  'Vehicle tax': 'Metafield: custom.tva [single_line_text_field]',
+  'Combustibil': 'Metafield: custom.fuel [single_line_text_field]',
+  'Battery capacity (in kWh)': 'Metafield: custom.capacitate_baterie [single_line_text_field]',
+  'Electric range (EAER)': 'Metafield: custom.range_mod_electric [single_line_text_field]',
+  'Consum de energie (comb.)': 'Metafield: custom.consum_combinat [single_line_text_field]',
+  'price/withoutVAT/amount': 'Metafield: custom.pret_furnizor [single_line_text_field]'
+};
+
+// List of core fields that should always be kept unchanged in the final
+// Shopify export.  These include core Shopify columns and metafields
+// already named in the desired format.  Fields not in this list or in
+// NEW_METAFIELD_MAPPINGS will be omitted.
+const ALWAYS_KEEP_FIELDS = new Set([
+  'Title',
+  'Body HTML',
+  'Tags',
+  'Image Src',
+  'Image Alt Text',
+  'Variant SKU',
+  'Variant Price',
+  'Metafield: custom.model [single_line_text_field]',
+  'Metafield: custom.marca [single_line_text_field]',
+  'Metafield: custom.putere_kw [single_line_text_field]',
+  'Metafield: custom.putere_cp [single_line_text_field]',
+  'Metafield: custom.transmisie [list.single_line_text_field]'
+]);
+
+/**
+ * Transform a row produced by buildMetafieldsRow() into a row using the
+ * new metafield names.  It renames keys according to
+ * NEW_METAFIELD_MAPPINGS and drops any keys not listed in
+ * NEW_METAFIELD_MAPPINGS or ALWAYS_KEEP_FIELDS.  Keys listed in
+ * ALWAYS_KEEP_FIELDS are kept as‑is.  Keys in NEW_METAFIELD_MAPPINGS
+ * are renamed to their new names.  All other keys are omitted.
+ *
+ * @param {Object} row The original row from buildMetafieldsRow.
+ * @returns {Object} A new row with renamed and filtered keys.
+ */
+function mapToNewMetafields(row) {
+  const newRow = {};
+  for (const key of Object.keys(row)) {
+    if (ALWAYS_KEEP_FIELDS.has(key)) {
+      newRow[key] = row[key];
+    } else if (NEW_METAFIELD_MAPPINGS[key]) {
+      const newKey = NEW_METAFIELD_MAPPINGS[key];
+      newRow[newKey] = row[key];
+    }
+    // omit everything else
+  }
+  return newRow;
+}
+
 
 // Load environment variables from .env if present.
 dotenv.config();
@@ -874,6 +953,51 @@ function buildMetafieldsRow(item, mappingList) {
   }
   row['price/withoutVAT/amount'] = priceNoVat || '';
 
+  // Extract power values from attributes.  If the raw attributes
+  // include a "Power" entry like "110 kW (150 hp)", split it into
+  // separate fields with units for kW and hp.  These will be stored
+  // under "Metafield: custom.putere_kw [single_line_text_field]" and
+  // "Metafield: custom.putere_cp [single_line_text_field]".  If the
+  // attribute does not exist or does not match the expected pattern,
+  // the fields will remain empty.  This logic supplements any
+  // existing mapping and ensures the power values are always
+  // available even if the mapping file does not define these fields.
+  let powerKw = '';
+  let powerHp = '';
+  if (item && item.attributes) {
+    let powerVal;
+    // attributes may be an object or a JSON string
+    if (typeof item.attributes === 'object' && !Array.isArray(item.attributes)) {
+      powerVal = item.attributes['Power'];
+    } else if (typeof item.attributes === 'string') {
+      try {
+        const parsedAttr = JSON.parse(item.attributes);
+        if (parsedAttr && typeof parsedAttr === 'object') {
+          powerVal = parsedAttr['Power'];
+        }
+      } catch (e) {
+        // ignore parse errors
+      }
+    }
+    if (powerVal) {
+      const s = String(powerVal);
+      // Match first number + optional decimal, spaces and kW or KW
+      const kwMatch = s.match(/\b(\d+[\d.,]*)\s*kW/i);
+      // Match number + optional decimal and hp within parentheses
+      const hpMatch = s.match(/\((\d+[\d.,]*)\s*hp\)/i);
+      if (kwMatch) {
+        // Preserve original unit
+        powerKw = `${kwMatch[1].replace(/\s+/g, '')} kW`;
+      }
+      if (hpMatch) {
+        powerHp = `${hpMatch[1].replace(/\s+/g, '')} hp`;
+      }
+    }
+  }
+  // Assign power values to new metafield columns if available.
+  row['Metafield: custom.putere_kw [single_line_text_field]'] = powerKw;
+  row['Metafield: custom.putere_cp [single_line_text_field]'] = powerHp;
+
   // Derive drive train metafield (custom.transmisie).  The dataset
   // stores drive type information primarily in the features list.  We
   // scan the features array for specific phrases indicating the drive
@@ -940,8 +1064,24 @@ function buildMetafieldsRow(item, mappingList) {
  * Map an entire array of raw dataset items to Shopify metafields rows using
  * a provided mapping list.  Returns a new array of objects.
  */
+/**
+ * Map each raw dataset item into a Shopify-ready row using the
+ * provided metafields mapping list.  The mapping process builds a
+ * complete set of Shopify columns via buildMetafieldsRow() and then
+ * applies mapToNewMetafields() to rename and filter fields according
+ * to the NEW_METAFIELD_MAPPINGS table.  Only fields listed in
+ * NEW_METAFIELD_MAPPINGS or ALWAYS_KEEP_FIELDS are retained in the
+ * final output.
+ *
+ * @param {Array} items The raw Apify dataset items.
+ * @param {Array} mappingList The list of source→dest metafield mappings loaded from the Excel file.
+ * @returns {Array} An array of rows ready for Shopify import.
+ */
 function mapDatasetToMetafields(items, mappingList) {
-  return items.map((item) => buildMetafieldsRow(item, mappingList));
+  return items.map((item) => {
+    const row = buildMetafieldsRow(item, mappingList);
+    return mapToNewMetafields(row);
+  });
 }
 
 /*
@@ -1211,6 +1351,81 @@ app.get('/api/shopify-results', async (req, res) => {
 });
 
 /*
+ * GET /api/normalize-results
+ *
+ * Normalize a dataset from a completed crawl.  This endpoint fetches
+ * raw items from the dataset associated with the given runId, applies
+ * the normalizeItem() helper to flatten arrays and objects into simple
+ * fields (images, features, attributes), and returns the normalized
+ * data in the requested format (json, csv or xlsx).  This allows
+ * users to perform step‑by‑step processing: first crawl, then
+ * normalize, then optionally map to Shopify.  The run must be
+ * finished before calling this endpoint.
+ */
+app.get('/api/normalize-results', async (req, res) => {
+  try {
+    const { runId, format = 'json' } = req.query;
+    if (!runId) {
+      return res.status(400).json({ error: 'runId query parameter is required' });
+    }
+    const token = process.env.APIFY_TOKEN || process.env.APIFY_API_TOKEN;
+    if (!token) {
+      return res.status(500).json({ error: 'APIFY_TOKEN or APIFY_API_TOKEN must be set' });
+    }
+    // Fetch run details to get the default dataset ID
+    const runResp = await fetch(`https://api.apify.com/v2/actor-runs/${runId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const runData = await runResp.json();
+    if (!runResp.ok) {
+      return res.status(runResp.status).json({ error: runData.error || 'Failed to fetch run details', detail: runData });
+    }
+    const datasetId = runData.data?.defaultDatasetId || runData.defaultDatasetId;
+    if (!datasetId) {
+      return res.status(404).json({ error: 'Dataset ID not found for this run. Ensure the run has finished.' });
+    }
+    // Load raw items from the dataset.
+    const itemsResp = await fetch(`https://api.apify.com/v2/datasets/${datasetId}/items?clean=true&format=json`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const rawItems = await itemsResp.json();
+    const items = Array.isArray(rawItems) ? rawItems : [];
+    // Normalize each item.
+    const normalized = items.map((itm) => normalizeItem(itm));
+    const fmt = String(format).toLowerCase();
+    if (fmt === 'json') {
+      return res.json(normalized);
+    }
+    if (fmt === 'csv') {
+      const csv = toCsv(normalized);
+      res.set('Content-Type', 'text/csv');
+      res.set('Content-Disposition', `attachment; filename="${runId}-normalized.csv"`);
+      return res.send(csv);
+    }
+    if (fmt === 'xlsx') {
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Normalized');
+      // Determine headers from normalized objects
+      const headerSet = new Set();
+      normalized.forEach((row) => Object.keys(row).forEach((k) => headerSet.add(k)));
+      const headers = Array.from(headerSet);
+      worksheet.addRow(headers);
+      normalized.forEach((row) => {
+        const line = headers.map((h) => row[h] ?? '');
+        worksheet.addRow(line);
+      });
+      const buffer = await workbook.xlsx.writeBuffer();
+      res.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.set('Content-Disposition', `attachment; filename="${runId}-normalized.xlsx"`);
+      return res.send(Buffer.from(buffer));
+    }
+    return res.status(400).json({ error: 'Unsupported format. Use json, csv or xlsx.' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+/*
  * GET /api/images-exploded
  *
  * Produce a long-format list of images for each product variant.  Each
@@ -1407,14 +1622,17 @@ app.get('/', (req, res) => {
 });
 
 /*
- * POST /api/start-run
+ * POST /api/start-crawl
  *
  * Kick off an Apify actor run asynchronously. Accepts JSON body with
  * "searchUrl" and optional "maxItems". Returns the ID of the run. If
  * APIFY_USE_ACTOR is false, this endpoint is disabled to prevent
  * accidental misuse.
  */
-app.post('/api/start-run', async (req, res) => {
+// Start a crawl run by launching the Apify actor with the provided search URL.
+// This endpoint initiates a crawl and returns a runId.  It does not
+// perform any normalization or Shopify mapping.
+app.post('/api/start-crawl', async (req, res) => {
   try {
     const { searchUrl, maxItems } = req.body || {};
     if (!searchUrl) {
@@ -1493,6 +1711,21 @@ app.post('/api/start-run', async (req, res) => {
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
+});
+
+// Start a crawl run under the legacy path.  This route simply calls the
+// handler defined for /api/start-crawl.  Defining it explicitly avoids
+// reliance on internal router internals and ensures that both paths
+// are available regardless of load order.
+app.post('/api/start-run', async (req, res) => {
+  // reuse the /api/start-crawl handler directly
+  const handler = app._router.stack.find(
+    (layer) => layer.route && layer.route.path === '/api/start-crawl'
+  )?.route.stack[0].handle;
+  if (handler) {
+    return handler(req, res);
+  }
+  return res.status(404).json({ error: 'Start crawl handler not found' });
 });
 
 /*
