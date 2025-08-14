@@ -119,14 +119,11 @@
                 document.getElementById('progress').textContent = 'Run succeeded. ' + succeeded + ' items.';
                 // Provide download links for raw and Shopify formats.
                 document.getElementById('links').innerHTML =
-                  '<p><strong>Downloads:</strong></p>' +
-                  '<a href="/api/run-results?runId=' + runId + '&format=json" target="_blank">Raw JSON</a>' +
-                  '<a href="/api/run-results?runId=' + runId + '&format=csv" target="_blank">Raw CSV</a>' +
+                  '<p><strong>Step 1: Raw crawl results</strong></p>' +
                   '<a href="/api/run-results?runId=' + runId + '&format=xlsx" target="_blank">Raw Excel</a>' +
-                  '<a href="/api/shopify-results?runId=' + runId + '&format=csv" target="_blank">Shopify CSV</a>' +
+                  '<p><strong>Step 2: Normalized & Shopify exports</strong></p>' +
+                  '<a href="/api/normalize-results?runId=' + runId + '&format=xlsx" target="_blank">Normalized Excel</a>' +
                   '<a href="/api/shopify-results?runId=' + runId + '&format=xlsx" target="_blank">Shopify Excel</a>' +
-                  '<a href="/api/images-exploded?runId=' + runId + '&format=json" target="_blank">Images JSON</a>' +
-                  '<a href="/api/images-exploded?runId=' + runId + '&format=csv" target="_blank">Images CSV</a>' +
                   '<a href="/api/images-exploded?runId=' + runId + '&format=xlsx" target="_blank">Images Excel</a>';
               } else if (status.status === 'FAILED' || status.status === 'ABORTED') {
                 clearInterval(interval);
